@@ -37,7 +37,7 @@ def rgb_to_ycbcr(image: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
 
 
-def chroma_subsample(image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def chroma_subsample(image: np.ndarray) -> tuple:
     height = image.shape[0]
     width = image.shape[1]
 
@@ -74,7 +74,7 @@ def make_blocks(image: np.ndarray) -> list:
     return blocks
 
 
-def run_dct(blocks: list[np.ndarray]) -> list[np.ndarray]:
+def run_dct(blocks: list) -> list:
     dct_blocks = list()
     for block in blocks:
         dct_block = fftpack.dct(block, axis=0, norm='ortho')
@@ -84,7 +84,7 @@ def run_dct(blocks: list[np.ndarray]) -> list[np.ndarray]:
     return dct_blocks
 
 
-def quantize(blocks: list[np.ndarray], quant_matrix: list, q_factor: int) -> list[np.ndarray]:
+def quantize(blocks: list, quant_matrix: list, q_factor: int) -> list:
     quantized_blocks = list()
     quant_matrix = np.array(quant_matrix).reshape((BLOCK_SIZE, BLOCK_SIZE))
 
@@ -113,7 +113,7 @@ def size_amp(components: list) -> list:
     return transformed
 
 
-def run_length_code(blocks: list[np.ndarray]) -> list:
+def run_length_code(blocks: list) -> list:
     rlc_blocks = list()
     for block in blocks:
         # Discard DC component
@@ -174,11 +174,11 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
 
         # Luminance quantization table
         f.write(bytes.fromhex('FFDB004300'))
-        f.write(bytes(y_quant_matrix))
+        f.write(bytes(np.array(y_quant_matrix, dtype=np.uint8)[zig_zag_order]))
 
         # Chrominance quantization table
         f.write(bytes.fromhex('FFDB004300'))
-        f.write(bytes(c_quant_matrix))
+        f.write(bytes(np.array(c_quant_matrix, dtype=np.uint8)[zig_zag_order]))
 
         # Start of frame with image width/height
         f.write(bytes.fromhex('FFC0001108'))
@@ -256,7 +256,7 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
             encoded += '1'
 
         f.write(int(encoded, 2).to_bytes(
-            (len(encoded) + 7) // 8, byteorder='little'))
+            (len(encoded) + 7) // 8, byteorder='big'))
 
         # End of image
         f.write(bytes.fromhex('FFD9'))
