@@ -120,8 +120,14 @@ def run_length_code(blocks: list) -> list:
         block = block[1:]
         zero_counter = 0
         rlc = list()
-        for num in block:
-            if num == 0:
+        for i in range(len(block)):
+            if not np.any(block[i:]):
+                break
+            num = block[i]
+            if zero_counter == 16:
+                rlc.append((15, 0))
+                zero_counter = 0
+            elif num == 0:
                 zero_counter += 1
             else:
                 rlc.append((zero_counter, num))
@@ -187,7 +193,10 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
         f.write(bytes.fromhex('03011100021101031101'))
 
         # Write Huffman tables
-        f.write(bytes.fromhex('FFC401A20000000701010101010000000000000000040503020601000708090A0B0100020203010101010100000000000000010002030405060708090A0B1000020103030204020607030402060273010203110400052112314151061361227181143291A10715B14223C152D1E1331662F0247282F12543345392A2B26373C235442793A3B33617546474C3D2E2082683090A181984944546A4B456D355281AF2E3F3C4D4E4F465758595A5B5C5D5E5F566768696A6B6C6D6E6F637475767778797A7B7C7D7E7F738485868788898A8B8C8D8E8F82939495969798999A9B9C9D9E9F92A3A4A5A6A7A8A9AAABACADAEAFA110002020102030505040506040803036D0100021103042112314105511361220671819132A1B1F014C1D1E1234215526272F1332434438216925325A263B2C20773D235E2448317549308090A18192636451A2764745537F2A3B3C32829D3E3F38494A4B4C4D4E4F465758595A5B5C5D5E5F5465666768696A6B6C6D6E6F6475767778797A7B7C7D7E7F738485868788898A8B8C8D8E8F839495969798999A9B9C9D9E9F92A3A4A5A6A7A8A9AAABACADAEAFA'))
+        f.write(bytes.fromhex(huffman.dc_lum_hex))
+        f.write(bytes.fromhex(huffman.dc_chr_hex))
+        f.write(bytes.fromhex(huffman.ac_lum_hex))
+        f.write(bytes.fromhex(huffman.ac_chr_hex))
 
         # Start of scan
         f.write(bytes.fromhex('FFDA000C03010002110311003F00'))
@@ -239,8 +248,8 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
             y = y_dc_encoded[i] + [x for y in y_ac_encoded[i] for x in y]
 
             encoded.extend(y)
-            if i % 4:
-                j = int(i / 4)
+            if (i + 1) % 4:
+                j = int((i + 1) / 4) - 1
                 cr = cr_dc_encoded[j] + \
                     [x for y in cr_ac_encoded[j] for x in y]
                 cb = cb_dc_encoded[j] + \
@@ -256,7 +265,7 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
             encoded += '1'
 
         f.write(int(encoded, 2).to_bytes(
-            (len(encoded) + 7) // 8, byteorder='big'))
+            len(encoded) / 8, byteorder='big'))
 
         # End of image
         f.write(bytes.fromhex('FFD9'))
@@ -305,7 +314,8 @@ def encode(filepath: str, q_factor: int) -> None:
     Cb_rlc_blocks = run_length_code(Cb_dct_blocks)
     Cr_rlc_blocks = run_length_code(Cr_dct_blocks)
 
-    dc = (Y_dpcm, Cb_dpcm, Cr_dpcm)
+    dc = (size_amp(Y_dc_components), size_amp(
+        Cb_dc_components), size_amp(Cr_dc_components))
     ac = (Y_rlc_blocks, Cb_rlc_blocks, Cr_rlc_blocks)
 
     write_to_file('test.jpg', dc, ac, image_size)
@@ -314,4 +324,4 @@ def encode(filepath: str, q_factor: int) -> None:
 
 
 if __name__ == '__main__':
-    encode('kodim23.png', 5)
+    encode('kodim23.png', 80)
