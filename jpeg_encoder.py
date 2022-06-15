@@ -33,7 +33,7 @@ def load_image(filepath: str) -> np.ndarray:
     return cv2.imread(filepath, cv2.IMREAD_COLOR)
 
 
-def rgb_to_ycbcr(image: np.ndarray) -> np.ndarray:
+def bgr_to_ycbcr(image: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
 
 
@@ -62,7 +62,7 @@ def make_blocks(image: np.ndarray) -> list:
 
     for i in range(blocks_height):
         for j in range(blocks_width):
-            block = np.zeros((BLOCK_SIZE, BLOCK_SIZE), dtype=np.uint8)
+            block = np.zeros((BLOCK_SIZE, BLOCK_SIZE), dtype=np.int)
 
             for block_row in range(BLOCK_SIZE):
                 row = image[i * BLOCK_SIZE + block_row, j *
@@ -84,14 +84,9 @@ def run_dct(blocks: list) -> list:
     return dct_blocks
 
 
-def quantize(blocks: list, quant_matrix: list, q_factor: int) -> list:
+def quantize(blocks: list, quant_matrix: list, scaling: int) -> list:
     quantized_blocks = list()
     quant_matrix = np.array(quant_matrix).reshape((BLOCK_SIZE, BLOCK_SIZE))
-
-    if q_factor >= 50:
-        scaling = (100 - q_factor) / 50
-    else:
-        scaling = 50 / q_factor
 
     for block in blocks:
         quantized = np.array([round(block[i, j] / round(quant_matrix[i, j] * scaling))
@@ -139,7 +134,10 @@ def run_length_code(blocks: list) -> list:
         for i in range(len(rlc)):
             amplitude = s_a[i][1]
             runlength_size = (rlc[i][0], s_a[i][0])
-            rlc[i] = (runlength_size, amplitude)
+            if (runlength_size == (0, 0)):
+                rlc[i] = runlength_size
+            else:
+                rlc[i] = (runlength_size, amplitude)
 
         rlc_blocks.append(rlc)
     return rlc_blocks
@@ -173,24 +171,30 @@ def ones_complement(num: int) -> str:
     return ret
 
 
-def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
+def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple, scaling: int):
     with open(filepath, 'wb') as f:
         # Header
         f.write(bytes.fromhex('FFD8FFE000104A46494600010100000100010000'))
 
         # Luminance quantization table
         f.write(bytes.fromhex('FFDB004300'))
-        f.write(bytes(np.array(y_quant_matrix, dtype=np.uint8)[zig_zag_order]))
+        quant_matrix = np.array(y_quant_matrix).reshape(
+            (BLOCK_SIZE, BLOCK_SIZE))
+        f.write(bytes(np.array([quant_matrix[i, j] * scaling for i in range(BLOCK_SIZE)
+                for j in range(BLOCK_SIZE)], dtype=np.uint8)[zig_zag_order]))
 
         # Chrominance quantization table
-        f.write(bytes.fromhex('FFDB004300'))
-        f.write(bytes(np.array(c_quant_matrix, dtype=np.uint8)[zig_zag_order]))
+        f.write(bytes.fromhex('FFDB004301'))
+        quant_matrix = np.array(c_quant_matrix).reshape(
+            (BLOCK_SIZE, BLOCK_SIZE))
+        f.write(bytes(np.array([quant_matrix[i, j] * scaling for i in range(BLOCK_SIZE)
+                for j in range(BLOCK_SIZE)], dtype=np.uint8)[zig_zag_order]))
 
         # Start of frame with image width/height
         f.write(bytes.fromhex('FFC0001108'))
         f.write(image_size[1].to_bytes(2, 'big'))
         f.write(image_size[0].to_bytes(2, 'big'))
-        f.write(bytes.fromhex('03011100021101031101'))
+        f.write(bytes.fromhex('03012200021101031101'))
 
         # Write Huffman tables
         f.write(bytes.fromhex(huffman.dc_lum_hex))
@@ -202,8 +206,6 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
         f.write(bytes.fromhex('FFDA000C03010002110311003F00'))
 
         # Write image data
-        y_dc = [huffman.dc_lum[d[0]].split() for d in dc[0]]
-
         y_dc_encoded = [[int(x) for x in list(huffman.dc_lum[d[0]]) + ones_complement(d[1])]
                         for d in dc[0]]
         cb_dc_encoded = [[int(x) for x in list(huffman.dc_chr[d[0]]) + ones_complement(d[1])]
@@ -219,8 +221,12 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
         for block in ac[0]:
             encoded_block = list()
             for el in block:
-                y_encoded = [int(x) for x in list(
-                    huffman.ac_lum[el[0]])] + ones_complement(el[1])
+                if el == (0, 0):
+                    y_encoded = [int(x) for x in list(
+                        huffman.ac_lum[el])]
+                else:
+                    y_encoded = [int(x) for x in list(
+                        huffman.ac_lum[el[0]])] + ones_complement(el[1])
                 encoded_block.append(y_encoded)
             y_ac_encoded.append(encoded_block)
 
@@ -228,8 +234,12 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
         for block in ac[1]:
             encoded_block = list()
             for el in block:
-                cb_encoded = [int(x) for x in list(
-                    huffman.ac_chr[el[0]])] + ones_complement(el[1])
+                if el == (0, 0):
+                    cb_encoded = [int(x) for x in list(
+                        huffman.ac_chr[el])]
+                else:
+                    cb_encoded = [int(x) for x in list(
+                        huffman.ac_chr[el[0]])] + ones_complement(el[1])
                 encoded_block.append(cb_encoded)
             cb_ac_encoded.append(encoded_block)
 
@@ -237,8 +247,12 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
         for block in ac[2]:
             encoded_block = list()
             for el in block:
-                cr_encoded = [int(x) for x in list(
-                    huffman.ac_chr[el[0]])] + ones_complement(el[1])
+                if el == (0, 0):
+                    cr_encoded = [int(x) for x in list(
+                        huffman.ac_chr[el])]
+                else:
+                    cr_encoded = [int(x) for x in list(
+                        huffman.ac_chr[el[0]])] + ones_complement(el[1])
                 encoded_block.append(cr_encoded)
             cr_ac_encoded.append(encoded_block)
 
@@ -248,15 +262,15 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
             y = y_dc_encoded[i] + [x for y in y_ac_encoded[i] for x in y]
 
             encoded.extend(y)
-            if (i + 1) % 4:
+            if (i + 1) % 4 == 0:
                 j = int((i + 1) / 4) - 1
-                cr = cr_dc_encoded[j] + \
-                    [x for y in cr_ac_encoded[j] for x in y]
                 cb = cb_dc_encoded[j] + \
                     [x for y in cb_ac_encoded[j] for x in y]
+                cr = cr_dc_encoded[j] + \
+                    [x for y in cr_ac_encoded[j] for x in y]
 
-                encoded.extend(cr)
                 encoded.extend(cb)
+                encoded.extend(cr)
 
         encoded = ''.join([str(x) for x in encoded])
 
@@ -264,8 +278,17 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple):
         while len(encoded) % 8 != 0:
             encoded += '1'
 
-        f.write(int(encoded, 2).to_bytes(
-            len(encoded) / 8, byteorder='big'))
+        encoded_bytes = bytearray(int(encoded, 2).to_bytes(
+            len(encoded) // 8, byteorder='big'))
+
+        # Non-marker 0xFF bytes need to be padded with 0x00
+        padded_bytes = bytearray()
+        for b in encoded_bytes:
+            padded_bytes.append(b)
+            if b == 255:
+                padded_bytes.append(0)
+
+        f.write(padded_bytes[:18500])
 
         # End of image
         f.write(bytes.fromhex('FFD9'))
@@ -276,7 +299,10 @@ def encode(filepath: str, q_factor: int) -> None:
     # Load image and convert to YCbCr color space
     image = load_image(filepath)
     image_size = (image.shape[1], image.shape[0])
-    image = rgb_to_ycbcr(image)
+    image = bgr_to_ycbcr(image)
+
+    blocks_x = image.shape[1] // 8
+    blocks_y = image.shape[0] // 8
 
     # Subsample the chroma channels in 4:2:0
     Y, CbCr = chroma_subsample(image)
@@ -286,21 +312,40 @@ def encode(filepath: str, q_factor: int) -> None:
     Cb_blocks = make_blocks(CbCr[:, :, 0])
     Cr_blocks = make_blocks(CbCr[:, :, 1])
 
+    Y_blocks = [x - 128 for x in Y_blocks]
+    Cb_blocks = [x - 128 for x in Cb_blocks]
+    Cr_blocks = [x - 128 for x in Cr_blocks]
+
     # Run 2D DCT on all blocks
     Y_dct_blocks = run_dct(Y_blocks)
     Cb_dct_blocks = run_dct(Cb_blocks)
     Cr_dct_blocks = run_dct(Cr_blocks)
 
+    if q_factor >= 50:
+        scaling_factor = (100 - q_factor) / 50
+    else:
+        scaling_factor = 50 / q_factor
+
     # Quantize the DCT blocks assuming quality factor is less than 100
     if q_factor < 100:
-        Y_dct_blocks = quantize(Y_dct_blocks, y_quant_matrix, q_factor)
-        Cb_dct_blocks = quantize(Cb_dct_blocks, c_quant_matrix, q_factor)
-        Cr_dct_blocks = quantize(Cr_dct_blocks, c_quant_matrix, q_factor)
+        Y_dct_blocks = quantize(Y_dct_blocks, y_quant_matrix, scaling_factor)
+        Cb_dct_blocks = quantize(Cb_dct_blocks, c_quant_matrix, scaling_factor)
+        Cr_dct_blocks = quantize(Cr_dct_blocks, c_quant_matrix, scaling_factor)
 
     # Reorder all blocks in zig-zag fashion
     Y_dct_blocks = [block.flatten()[zig_zag_order] for block in Y_dct_blocks]
     Cb_dct_blocks = [block.flatten()[zig_zag_order] for block in Cb_dct_blocks]
     Cr_dct_blocks = [block.flatten()[zig_zag_order] for block in Cr_dct_blocks]
+
+    # Order Y blocks in 4x4 from top left to bottom right for interleaving
+    Y_new = []
+    for row in range(0, blocks_y, 2):
+        for col in range(0, blocks_x, 2):
+            Y_new.append(Y_dct_blocks[col + blocks_x*row])
+            Y_new.append(Y_dct_blocks[col + blocks_x*row + 1])
+            Y_new.append(Y_dct_blocks[col + blocks_x*(row + 1)])
+            Y_new.append(Y_dct_blocks[col + blocks_x*(row + 1) + 1])
+    Y_dct_blocks = Y_new
 
     Y_dc_components = [block[0] for block in Y_dct_blocks]
     Cb_dc_components = [block[0] for block in Cb_dct_blocks]
@@ -314,14 +359,13 @@ def encode(filepath: str, q_factor: int) -> None:
     Cb_rlc_blocks = run_length_code(Cb_dct_blocks)
     Cr_rlc_blocks = run_length_code(Cr_dct_blocks)
 
-    dc = (size_amp(Y_dc_components), size_amp(
-        Cb_dc_components), size_amp(Cr_dc_components))
+    dc = (Y_dpcm, Cb_dpcm, Cr_dpcm)
     ac = (Y_rlc_blocks, Cb_rlc_blocks, Cr_rlc_blocks)
 
-    write_to_file('test.jpg', dc, ac, image_size)
+    write_to_file('test.jpg', dc, ac, image_size, scaling_factor)
 
     return True
 
 
 if __name__ == '__main__':
-    encode('kodim23.png', 80)
+    encode('kodim23.png', 85)
