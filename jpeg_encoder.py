@@ -3,6 +3,8 @@ import cv2
 from scipy import fftpack
 import huffman
 
+import matplotlib.pyplot as plt
+
 BLOCK_SIZE = 8
 
 y_quant_matrix = [16, 11, 10, 16, 24, 40, 51,
@@ -44,13 +46,13 @@ def chroma_subsample(image: np.ndarray) -> tuple:
     Y = image[:, :, 0]
     CbCr = np.zeros((int(height / 2), int(width / 2), 2), dtype=np.uint8)
 
-    for i in range(int(height / 2)):
-        for j in range(int(width / 2)):
+    for i in range(0, height, 2):
+        for j in range(0, width, 2):
             cr = int(image[i, j, 1] / 4.0 + image[i + 1, j, 1] / 4.0 +
                      image[i, j + 1, 1] / 4.0 + image[i + 1, j + 1, 1] / 4.0)
             cb = int(image[i, j, 2] / 4.0 + image[i + 1, j, 2] / 4.0 +
                      image[i, j + 1, 2] / 4.0 + image[i + 1, j + 1, 2] / 4.0)
-            CbCr[i, j] = [cb, cr]
+            CbCr[round(i/2), round(j/2)] = [cb, cr]
 
     return Y, CbCr
 
@@ -145,7 +147,6 @@ def run_length_code(blocks: list) -> list:
 
 def dpcm(dc_components: list) -> list:
     modulated = [dc_components[0]]
-    transformed = list()
 
     for i in range(1, len(dc_components)):
         modulated.append(dc_components[i] - dc_components[i-1])
@@ -288,7 +289,7 @@ def write_to_file(filepath: str, dc: tuple, ac: tuple, image_size: tuple, scalin
             if b == 255:
                 padded_bytes.append(0)
 
-        f.write(padded_bytes[:18500])
+        f.write(padded_bytes)
 
         # End of image
         f.write(bytes.fromhex('FFD9'))
@@ -306,6 +307,9 @@ def encode(filepath: str, q_factor: int) -> None:
 
     # Subsample the chroma channels in 4:2:0
     Y, CbCr = chroma_subsample(image)
+
+    #plt.imshow(CbCr[:, :, 0], cmap='gray')
+    #plt.show()
 
     # Convert image channels to 8x8 blocks
     Y_blocks = make_blocks(Y)
@@ -331,6 +335,10 @@ def encode(filepath: str, q_factor: int) -> None:
         Y_dct_blocks = quantize(Y_dct_blocks, y_quant_matrix, scaling_factor)
         Cb_dct_blocks = quantize(Cb_dct_blocks, c_quant_matrix, scaling_factor)
         Cr_dct_blocks = quantize(Cr_dct_blocks, c_quant_matrix, scaling_factor)
+    else:
+        Y_dct_blocks = [x.astype(int) for x in Y_dct_blocks]
+        Cb_dct_blocks = [x.astype(int) for x in Cb_dct_blocks]
+        Cr_dct_blocks = [x.astype(int) for x in Cr_dct_blocks]
 
     # Reorder all blocks in zig-zag fashion
     Y_dct_blocks = [block.flatten()[zig_zag_order] for block in Y_dct_blocks]
@@ -368,4 +376,4 @@ def encode(filepath: str, q_factor: int) -> None:
 
 
 if __name__ == '__main__':
-    encode('kodim23.png', 85)
+    encode('kodim23.png', 80)
