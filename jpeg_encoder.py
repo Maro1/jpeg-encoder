@@ -3,8 +3,6 @@ import cv2
 from scipy import fftpack
 import huffman
 
-import matplotlib.pyplot as plt
-
 BLOCK_SIZE = 8
 
 y_quant_matrix = [16, 11, 10, 16, 24, 40, 51,
@@ -307,9 +305,6 @@ def encode(filepath: str, q_factor: int) -> None:
 
     # Subsample the chroma channels in 4:2:0
     Y, CbCr = chroma_subsample(image)
-
-    #plt.imshow(CbCr[:, :, 0], cmap='gray')
-    #plt.show()
 
     # Convert image channels to 8x8 blocks
     Y_blocks = make_blocks(Y)
