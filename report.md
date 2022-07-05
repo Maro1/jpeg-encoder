@@ -53,7 +53,7 @@ The resulting encoder is working and correctly encodes the images to the JPEG fo
 | ![](/home/mathias/Dev/jpeg_encoder/scaling_80.jpg) | ![](/home/mathias/Dev/jpeg_encoder/scaling_90.jpg) |
 | -------------------------------------------------- | -------------------------------------------------- |
 
-The reson for this is unknown, however it is assumed to be in the lossless encoding part. It may be the difference coding that is wrong, causing a few blocks to be wrongly encoded, and the following ones to have a wrong reference for the difference. This is assumed since there is a "jump" in the image corresponding to around 2 blocks, and the following blocks seem to have a wrong brightness level.
+The reson for this is unknown, however it is assumed to be in the lossless encoding part. It may be the difference coding that is wrong, causing a few blocks to be wrongly encoded, and the following ones to have a wrong reference for the difference. This is assumed since there is a "jump" in the image corresponding to around 2 blocks, and the following blocks seem to have a wrong brightness level. Also since it only happens with high Q-factor values, it may have something to do with high difference values being encoded wrongly.
 
 
 
